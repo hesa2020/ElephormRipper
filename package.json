@@ -1,0 +1,33 @@
+{
+	"name": "elephormripper",
+	"version": "1.0.0",
+	"description": "",
+	"main": "src/index.js",
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"babel": "./node_modules/.bin/babel",
+		"babel-node": "./node_modules/.bin/babel-node",
+		"start": "nodemon --exec babel-node src/index.js"
+	},
+	"dependencies": {
+		"beautify.log": "^2.1.2",
+		"chrome-paths": "^1.0.1",
+		"m3u8-to-mp4": "^1.0.0",
+		"prompt": "^1.2.0",
+		"puppeteer": "^5.3.1",
+		"puppeteer-extra": "^3.1.15",
+		"puppeteer-extra-plugin-adblocker": "^2.11.6",
+		"puppeteer-extra-plugin-block-resources": "^2.2.7",
+		"puppeteer-extra-plugin-stealth": "^2.6.1"
+	},
+	"devDependencies": {
+		"@babel/cli": "^7.15.4",
+		"@babel/core": "^7.15.5",
+		"@babel/node": "^7.15.4",
+		"@babel/preset-env": "^7.15.6",
+		"nodemon": "^2.0.4"
+	}
+}
