@@ -1,84 +1,160 @@
-const fs          = require('fs').promises;
+const fs          = require('fs');
 const puppeteer   = require("puppeteer-extra");
 const stealth     = require("puppeteer-extra-plugin-stealth")();
 const chromePaths = require('chrome-paths');
 const m3u8ToMp4   = require("m3u8-to-mp4");
-const prompt      = require('prompt');
 const beautify    = require('beautify.log').default;
+const sleep       = require("sleep-promise");
 var converter     = new m3u8ToMp4();
 puppeteer.use(stealth);
 
-beautify.log('❤️ {fgRed}Hello, {fgGreen}world! ❤️');
-beautify.log('{bgWhite}{fgRed}Hello, {bgRed}{fgGreen}world!');
-beautify.log('{fgGreen}Hello, {fgRed}world!');
-beautify.log('{dim}{fgRed}Hello, {fgGreen}world!');
-beautify.log('{underscore}{fgRed}Hello, {fgGreen}world!');
-beautify.log('{bright}{fgRed}Hello, {fgGreen}world!');
-beautify.log(
-	'{bright}{fgYellow}Lorem ipsum dolor {fgBlue}sit amet consectetur {fgCyan}adipisicing elit.',
-);
-beautify.log(
-	'{fgYellow}Lorem ipsum dolor {reset}{bgRed}sit amet consectetur{reset} {fgCyan}adipisicing elit.',
-);
-beautify.log(
-	'{reverse}{fgYellow}Lorem ipsum dolor{reset} {reverse}{bgRed}sit amet consectetur{reset} {reverse}{fgCyan}adipisicing elit.',
-);
+var downloading = false;
+var current_chapitre = '';
 
-const properties = [
-    {
-        name: 'username',
-        validator: /^[a-zA-Z\s\-]+$/,
-        warning: 'Username must be only letters, spaces, or dashes'
-    },
-    {
-        name: 'password',
-        hidden: true
-    }
-];
+var browser = null;
+var page    = null;
 
-prompt.start();
+beautify.log('❤️ {fgRed}Elephorm {fgGreen}ripper! ❤️');
 
-
-prompt.get(properties, function (err, result) {
-    if (err) { return onErr(err); }
-    console.log('Command-line input received:');
-    console.log('  Username: ' + result.username);
-    console.log('  Password: ' + result.password);
-});
-
-function onErr(err) {
-    console.log(err);
-    return 1;
-}
-
-var downloaded = false;
-
-async function DownloadVideo(url, outputname)
+async function DownloadVideo(url)
 {
-    await converter.setInputFile(request.url).setOutputFile("dummy.mp4").start();
+    try
+    {
+        await page.waitForNavigation({timeout: 3000, waitUntil: 'load'});
+    }
+    catch(error){}
+    var path = '.';
+    var videoName = '';
+    const breadcrumbs = await page.$$('.fil_arianne a')
+    for (let breadcrumb of breadcrumbs)
+    {
+        let text = (await page.evaluate(el => el.textContent, breadcrumb)).replace('\n', '').replace(/[^A-Z a-z0-9]/gi,'').trim().replace('  ', ' ');
+        var link = (await page.evaluate(el => el.getAttribute('href'), breadcrumb));
+        var linkIsNullOrEmpty = link == null || typeof link != 'string' && link.trim() == '';
+        if(!linkIsNullOrEmpty)
+        {
+            path += '/' + text;
+            if(!fs.existsSync(path))
+            {
+                fs.mkdirSync(path);
+            }
+        }
+        else
+        {
+            videoName = text;
+        }
+    }
+    if(current_chapitre != '')
+    {
+        path += '/' + current_chapitre;
+        if(!fs.existsSync(path))
+        {
+            fs.mkdirSync(path);
+        }
+    }
+    path += '/' + videoName;
+    if(!fs.existsSync(path + ".mp4"))
+    {
+        await converter.setInputFile(url).setOutputFile(path + ".mp4").start();
+    }
 }
 
 async function LoadCookies(page)
 {
-    const cookiesString = await fs.readFile('./cookies.json');
-    const cookies = JSON.parse(cookiesString);
-    await page.setCookie(...cookies);
+    await fs.readFile('./cookies.json', async function read(err, data)
+    {
+        if (err)
+        {
+            throw err;
+        }
+        const cookies = JSON.parse(data);
+        await page.setCookie(...cookies);
+    });
 }
 
 async function WriteCookies(page)
 {
     const cookies = await page.cookies();
-    await fs.writeFile('./cookies.json', JSON.stringify(cookies, null, 2));
+    await fs.writeFile('./cookies.json', JSON.stringify(cookies, null, 2), function(err, result)
+    {
+        if(err) console.log('error', err);
+    });
+}
+
+async function Downloading()
+{
+    while(downloading)
+    {
+        await sleep(1000);
+    }
+}
+
+async function DownloadCourse(url)
+{
+    await page.goto(url);
+    await sleep(1000);
+    await Downloading();
+    console.log('downloaded url: ' + url);
+}
+
+async function DownloadFormation(url)
+{
+    await page.goto(url);
+    await sleep(1000);
+    await Downloading();
+    const chapitres_links = {};
+    const chapitres = await page.$$('#chapitres .chapitre');
+    for (const chapitre of chapitres)
+    {
+        //find h3 text...
+        const chapitreText = (await page.evaluate(el => el.getElementsByTagName('h3')[0].innerText.trim(), chapitre));
+        chapitres_links[chapitreText] = [];
+        const courses = await chapitre.$$('.lesson__content a');
+        for (const course of courses)
+        {
+            var newUrl = (await page.evaluate(el => el.getAttribute('href'), course));
+            if(newUrl.startsWith("/"))
+            {
+                newUrl = "https://www.elephorm.com" + newUrl;
+            }
+            if(newUrl == url) continue;
+            chapitres_links[chapitreText].push(newUrl);
+        }
+    }
+    for(const chapitreText in Object.keys(chapitres_links))
+    {
+        for (const courseUrl of chapitres_links[chapitreText])
+        {
+            current_chapitre = chapitreText;
+            await DownloadCourse(courseUrl);
+        }
+    }
+    console.log('downloaded formation: ' + url);
+}
+
+async function DownloadPackFormation(url)
+{
+    //
+    console.log('downloaded pack formation: ' + url);
+}
+
+async function DownloadFormations(url)
+{
+    //
+}
+
+async function DownloadAll()
+{
+    //
 }
 
 (async () => {
-    const browser = await puppeteer.launch({
-        headless:         false,
-        executablePath:   chromePaths.chrome,
-        defaultViewport:  null
+    browser = await puppeteer.launch({
+        headless:        false,
+        executablePath:  chromePaths.chrome,
+        defaultViewport: null
     });
-
-    const page   = await browser.newPage();
+    page = await browser.newPage();
     const client = await page.target().createCDPSession();
     await client.send('Network.enable');
     await client.send('Network.setRequestInterception', { patterns: [{ urlPattern: '*' }] });
@@ -88,14 +164,67 @@ async function WriteCookies(page)
         responseHeaders,
         resourceType
     }) => {
-        if (request.url.includes('m3u8'))
+        try
         {
-            if(downloaded) return;
-            downloaded = true;
-            console.log(request.url);
-            await DownloadVideo(request.url, 'dummy.mp4')
+            if
+            (
+                request.url.startsWith('https://videos-cloudflare.jwpsrv.com') &&
+                request.url.includes('.mp4.m3u8')
+            )
+            {
+                await Downloading();
+                downloading = true;
+                await DownloadVideo(request.url);
+                downloading = false;
+            }
+            client.send('Network.continueInterceptedRequest', { interceptionId });
         }
-        client.send('Network.continueInterceptedRequest', { interceptionId });
+        catch(error){}
     });
-    await page.goto('...url...');
+    if(fs.existsSync('./cookies.json'))
+    {
+        await LoadCookies(page);
+    }
+    await page.goto('https://www.elephorm.com/user/login');
+    var login_link = await page.$('.user-login-form');
+    if(login_link != null)
+    {
+        beautify.log('{bgRed}Please log on your account to continue.{reset}');
+    }
+    //
+    while((await page.url()).includes('/user/login') == true)
+    {
+        try
+        {
+            await sleep(1000);
+        }
+        catch(error){}
+    }
+    console.log('IS LOGGED IN!');
+    await WriteCookies(page);
+    const links_to_download = [
+        'https://www.elephorm.com/formation/infographie/cours-de-dessin/cours-de-dessin-le-corps-humain'
+    ];
+    for(var i = 0; i < links_to_download.length; i++)
+    {
+        const link_to_download = links_to_download[i];
+        console.log(link_to_download);
+        if(link_to_download.endsWith('/formations'))
+        {
+            await DownloadAll();
+        }
+        else if(link_to_download.includes('/formations/'))
+        {
+            await DownloadFormations(link_to_download);
+        }
+        else if(link_to_download.includes('/pack-formation/'))
+        {
+            await DownloadPackFormation(link_to_download);
+        }
+        else if(link_to_download.includes('/formation/'))
+        {
+            await DownloadFormation(link_to_download);
+        }
+    }
+    console.log('Finished downloading.');
 })();
